@@ -54,14 +54,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-
-# --- MOTORES DE CONSULTA ---
+# --- MOTORES ---
 
 def get_bq_client():
     info = st.secrets["gcp_service_account"]
     credentials = service_account.Credentials.from_service_account_info(info)
     return bigquery.Client(credentials=credentials, project=credentials.project_id)
-
 
 def consultar_brasilapi(cnpj, tentativas=3):
     url = f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
@@ -77,138 +75,116 @@ def consultar_brasilapi(cnpj, tentativas=3):
                 status = "Sim" if simples is True else "Não"
                 if simples is None: obs_parts.append("Sem registro")
                 return {
-                    "CNPJ": cnpj, "Status": status, "Razão Social": d.get("razao_social", "N/A"),
+                    "CNPJ": cnpj, "Simples Nacional": status, "Razão Social": d.get("razao_social", "N/A"),
                     "Data Opção": d.get("data_opcao_pelo_simples", ""),
                     "Data Exclusão": d.get("data_exclusao_do_simples", ""), "OBS": " | ".join(obs_parts)
                 }
             elif resp.status_code == 429:
                 time.sleep(7)
                 continue
-            return {"CNPJ": cnpj, "Status": "Não", "Razão Social": "Não encontrado", "OBS": f"Erro {resp.status_code}"}
+            return {"CNPJ": cnpj, "Simples Nacional": "Não", "Razão Social": "Não encontrado", "OBS": f"Erro {resp.status_code}"}
         except:
             time.sleep(2)
-    return {"CNPJ": cnpj, "Status": "Erro", "Razão Social": "Falha Rede", "OBS": "Timeout"}
-
+    return {"CNPJ": cnpj, "Simples Nacional": "Erro", "Razão Social": "Falha Rede", "OBS": "Timeout"}
 
 def formatar_cnpj(c):
     c = str(c).zfill(14)
     return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
 
+# --- ABAS ---
 
-# --- ABAS DA INTERFACE ---
-
-def aba_simples_nacional_lote():
-    st.title("Simples Nacional (BigQuery)")
-    st.caption("Consulta em massa via Google Cloud Platform")
+def aba_bigquery():
+    st.title("BigQuery (Nuvem)")
+    st.caption("Alta performance via Google Cloud")
     st.divider()
-
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.subheader("Entrada")
-        input_texto = st.text_area("Insira os identificadores:", height=300, placeholder="00000000000000")
-        placeholder_btn_download = st.empty()
-        btn_processar = st.button("Executar Consulta BigQuery")
-
+        input_texto = st.text_area("Insira os CNPJs (BigQuery):", height=300)
+        placeholder_btn = st.empty()
+        btn = st.button("Executar BigQuery")
     with col2:
-        st.subheader("Resultados")
-        if btn_processar:
-            identificadores = list(
-                set(re.findall(r"\d{14}", input_texto.replace(".", "").replace("/", "").replace("-", ""))))
-            if not identificadores:
-                st.error("Nenhum identificador válido encontrado.")
+        if btn:
+            cnpjs = list(set(re.findall(r"\d{14}", input_texto.replace(".", "").replace("/", "").replace("-", ""))))
+            if not cnpjs: st.error("Nenhum CNPJ.")
             else:
-                start_time = time.time()
-                try:
-                    client = get_bq_client()
-                    raizes = list(set([c[:8] for c in identificadores]))
-                    lista_sql = ", ".join([f"'{r}'" for r in raizes])
+                start = time.time()
+                client = get_bq_client()
+                lista_sql = ", ".join([f"'{c[:8]}'" for c in cnpjs])
+                query = f"SELECT cnpj_basico, IF(opcao_simples = 1, 'Sim', 'Não') as Status FROM `basedosdados.br_me_cnpj.simples` WHERE cnpj_basico IN ({lista_sql})"
+                with st.spinner("Consultando..."):
+                    df_nuvem = client.query(query).to_dataframe()
+                    df_base = pd.DataFrame({'CNPJ': cnpjs})
+                    df_base['cnpj_basico'] = df_base['CNPJ'].str[:8]
+                    df_nuvem['cnpj_basico'] = df_nuvem['cnpj_basico'].astype(str).str.zfill(8)
+                    df_final = pd.merge(df_base, df_nuvem, on='cnpj_basico', how='left')
+                    df_final['OBS'] = ""
+                    df_final.loc[df_final['Status'].isna(), 'OBS'] = "Não encontrado"
+                    df_final['Status'] = df_final['Status'].fillna('Não')
+                    df_final.rename(columns={'Status': 'Simples Nacional'}, inplace=True)
+                    df_final['CNPJ'] = df_final['CNPJ'].apply(formatar_cnpj)
+                    df_final.drop(columns=['cnpj_basico'], inplace=True)
+                    st.markdown(f"<div class='time-card'><b>Tempo Resposta:</b><br>{round(time.time()-start, 2)}s</div>", unsafe_allow_html=True)
+                    st.dataframe(df_final, use_container_width=True, hide_index=True)
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer: df_final.to_excel(writer, index=False)
+                    with placeholder_btn: st.download_button("Gerar Excel (xlsx)", output.getvalue(), f"bq_{datetime.now().strftime('%H%M%S')}.xlsx")
 
-                    query = f"""
-                        SELECT 
-                            cnpj_basico,
-                            IF(opcao_simples = 1, 'Sim', 'Não') as Simples_Nacional
-                        FROM `basedosdados.br_me_cnpj.simples`
-                        WHERE cnpj_basico IN ({lista_sql})
-                    """
-
-                    with st.spinner("Consultando nuvem..."):
-                        query_job = client.query(query)
-                        df_nuvem = query_job.to_dataframe()
-
-                        df_base = pd.DataFrame({'CNPJ': identificadores})
-                        df_base['cnpj_basico'] = df_base['CNPJ'].str[:8]
-                        df_nuvem['cnpj_basico'] = df_nuvem['cnpj_basico'].astype(str).str.zfill(8)
-
-                        df_final = pd.merge(df_base, df_nuvem, on='cnpj_basico', how='left')
-                        df_final['OBS'] = ""
-                        mask_not_found = df_final['Simples_Nacional'].isna()
-                        df_final.loc[mask_not_found, 'OBS'] = "Não encontrado"
-                        df_final['Simples_Nacional'] = df_final['Simples_Nacional'].fillna('Não')
-                        df_final.rename(columns={'Simples_Nacional': 'Simples Nacional'}, inplace=True)
-                        df_final['CNPJ'] = df_final['CNPJ'].apply(formatar_cnpj)
-                        df_final.drop(columns=['cnpj_basico'], inplace=True)
-
-                        tempo_total = time.time() - start_time
-                        st.markdown(
-                            f"<div class='time-card'><b>Tempo de Resposta:</b><br>{round(tempo_total, 2)} segundos</div>",
-                            unsafe_allow_html=True)
-                        st.dataframe(df_final, use_container_width=True, hide_index=True)
-
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            df_final.to_excel(writer, index=False, sheet_name='SimplesNacional')
-
-                        with placeholder_btn_download:
-                            st.download_button(label="Gerar Excel (xlsx)", data=output.getvalue(),
-                                               file_name=f"simples_{datetime.now().strftime('%H%M%S')}.xlsx",
-                                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                except Exception as e:
-                    st.error(f"Erro no BigQuery: {e}")
-
-
-def aba_brasilapi_individual():
-    st.title("Consulta Individual (BrasilAPI)")
-    st.caption("Verificação detalhada de documento único")
+def aba_brasilapi_lote():
+    st.title("BrasilAPI (Lote)")
+    st.caption("Fallback detalhado com monitoramento vivo")
     st.divider()
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        input_texto = st.text_area("Insira os CNPJs (BrasilAPI):", height=300)
+        delay_ref = 0.8
+        placeholder_btn = st.empty()
+        btn = st.button("Iniciar BrasilAPI")
+    with col2:
+        if btn:
+            cnpjs = list(set(re.findall(r"\d{14}", input_texto.replace(".", "").replace("/", "").replace("-", ""))))
+            if not cnpjs: st.error("Nenhum CNPJ.")
+            else:
+                total = len(cnpjs)
+                col_t1, col_t2 = st.columns(2)
+                with col_t1: container_est = st.empty()
+                container_dec = col_t2.empty()
+                barra = st.progress(0)
+                container_log = st.empty()
+                df_display = pd.DataFrame(columns=["CNPJ", "Simples Nacional", "Razão Social", "Data Opção", "Data Exclusão", "OBS"])
+                tabela = st.dataframe(df_display, use_container_width=True, hide_index=True)
+                start = time.time()
+                for idx, cnpj in enumerate(cnpjs):
+                    percent = int(((idx + 1) / total) * 100)
+                    barra.progress((idx + 1) / total)
+                    container_dec.markdown(f"<div class='time-card'><b>Tempo Decorrido:</b><br>{round(time.time()-start, 1)}s</div>", unsafe_allow_html=True)
+                    res = consultar_brasilapi(cnpj)
+                    df_display = pd.concat([df_display, pd.DataFrame([res])], ignore_index=True)
+                    tabela.dataframe(df_display, use_container_width=True, hide_index=True)
+                    container_log.markdown(f"<div class='status-box'><span class='status-label'>Lote:</span> <span class='status-value'>{idx+1}/{total}</span><br><span class='status-label'>Ativo:</span> <span class='status-value'>{cnpj}</span></div>", unsafe_allow_html=True)
+                    time.sleep(delay_ref)
+                container_log.empty()
+                st.success("Concluído.")
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer: df_display.to_excel(writer, index=False)
+                with placeholder_btn: st.download_button("Gerar Excel (xlsx)", output.getvalue(), f"api_{datetime.now().strftime('%H%M%S')}.xlsx")
 
-    col_input, _ = st.columns([1, 1])
-    with col_input:
-        cnpj_input = st.text_input("Digite o documento:", placeholder="00.000.000/0000-00")
-        btn_individual = st.button("Consultar BrasilAPI")
-
-    if btn_individual:
-        cnpj_limpo = re.sub(r"\D", "", cnpj_input)
-        if len(cnpj_limpo) != 14:
-            st.error("Insira 14 dígitos.")
-        else:
-            with st.spinner("Buscando..."):
-                res = consultar_brasilapi(cnpj_limpo)
-                if res:
-                    st.markdown(f"""
-                    <div class="card-individual">
-                        <p style="color: #666; margin-bottom: 5px;">Razão Social</p>
-                        <h3 style="margin-top: 0; color: #1f4e79;">{res['Razão Social']}</h3>
-                        <hr>
-                        <p><b>CNPJ:</b> {res['CNPJ']}</p>
-                        <p><b>Status Simples:</b> {res['Status']}</p>
-                        <p><b>Data Opção:</b> {res['Data Opção'] or 'N/A'}</p>
-                        <p><b>Data Exclusão:</b> {res['Data Exclusão'] or 'N/A'}</p>
-                        <p><b>OBS:</b> {res['OBS']}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-
-# --- MAIN ---
+def aba_individual():
+    st.title("Consulta Individual")
+    st.caption("Detalhes pontuais via BrasilAPI")
+    st.divider()
+    cnpj_in = st.text_input("Documento:")
+    if st.button("Consultar Individual"):
+        c_limpo = re.sub(r"\D", "", cnpj_in)
+        if len(c_limpo) == 14:
+            res = consultar_brasilapi(c_limpo)
+            st.markdown(f"<div class='card-individual'><h3>{res['Razão Social']}</h3><hr><p><b>Status:</b> {res['Simples Nacional']}</p><p><b>OBS:</b> {res['OBS']}</p></div>", unsafe_allow_html=True)
 
 def main():
     st.sidebar.title("Navegação")
-    opcao = st.sidebar.selectbox("Selecione a modalidade:", ["Lote (Simples Nacional)", "Individual (Detalhado)"])
-
-    if opcao == "Lote (Simples Nacional)":
-        aba_simples_nacional_lote()
-    else:
-        aba_brasilapi_individual()
-
+    opcao = st.sidebar.selectbox("Modalidade:", ["BigQuery (Rápido)", "BrasilAPI (Detalhado/Lote)", "Individual"])
+    if opcao == "BigQuery (Rápido)": aba_bigquery()
+    elif opcao == "BrasilAPI (Detalhado/Lote)": aba_brasilapi_lote()
+    else: aba_individual()
 
 if __name__ == "__main__":
     main()
