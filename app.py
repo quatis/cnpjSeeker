@@ -76,8 +76,8 @@ def consultar_brasilapi(cnpj, tentativas=3):
                 if simples is None: obs_parts.append("Sem registro")
                 return {
                     "CNPJ": cnpj, "Simples Nacional": status, "Razão Social": d.get("razao_social", "N/A"),
-                    "Data Opção": d.get("data_opcao_pelo_simples", ""),
-                    "Data Exclusão": d.get("data_exclusao_do_simples", ""), "OBS": " | ".join(obs_parts)
+                    "Data Opção SN": d.get("data_opcao_pelo_simples", ""),
+                    "Data Exclusão SN": d.get("data_exclusao_do_simples", ""), "OBS": " | ".join(obs_parts)
                 }
             elif resp.status_code == 429:
                 time.sleep(7)
@@ -181,9 +181,9 @@ def aba_individual():
 
 def main():
     st.sidebar.title("Navegação")
-    opcao = st.sidebar.selectbox("Modalidade:", ["BigQuery (Rápido)", "BrasilAPI (Detalhado/Lote)"])
-    if opcao == "BigQuery (Rápido)": aba_bigquery()
-    elif opcao == "BrasilAPI (Detalhado/Lote)": aba_brasilapi_lote()
+    opcao = st.sidebar.selectbox("Modalidade:", ["BrasilAPI (Detalhado)", "BigQuery (Lotes grandes)"])
+    if opcao == "BigQuery (Lotes grandes)": aba_bigquery()
+    elif opcao == "BrasilAPI (Detalhado)": aba_brasilapi_lote()
 
 if __name__ == "__main__":
     main()
