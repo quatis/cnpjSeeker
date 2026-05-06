@@ -181,10 +181,9 @@ def aba_individual():
 
 def main():
     st.sidebar.title("Navegação")
-    opcao = st.sidebar.selectbox("Modalidade:", ["BigQuery (Rápido)", "BrasilAPI (Detalhado/Lote)", "Individual"])
+    opcao = st.sidebar.selectbox("Modalidade:", ["BigQuery (Rápido)", "BrasilAPI (Detalhado/Lote)"])
     if opcao == "BigQuery (Rápido)": aba_bigquery()
     elif opcao == "BrasilAPI (Detalhado/Lote)": aba_brasilapi_lote()
-    else: aba_individual()
 
 if __name__ == "__main__":
     main()
