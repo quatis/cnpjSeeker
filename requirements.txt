@@ -1,6 +1,6 @@
 streamlit
 pandas
 google-cloud-bigquery
-google-oauth2
+google-auth
 openpyxl
 basedosdados
