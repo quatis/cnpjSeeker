@@ -88,7 +88,7 @@ def main():
                 query = f"""
                     SELECT 
                         cnpj_basico,
-                        IF(opcao_simples = 1, 'Sim', 'Não') as Status
+                        IF(opcao_simples = 1, 'Sim', 'Não') as Simples_Nacional
                     FROM `basedosdados.br_me_cnpj.simples`
                     WHERE cnpj_basico IN ({lista_sql})
                 """
@@ -104,7 +104,13 @@ def main():
                         df_nuvem['cnpj_basico'] = df_nuvem['cnpj_basico'].astype(str).str.zfill(8)
 
                         df_final = pd.merge(df_base, df_nuvem, on='cnpj_basico', how='left')
-                        df_final['Status'] = df_final['Status'].fillna('Não encontrado')
+
+                        df_final['OBS'] = ""
+                        mask_not_found = df_final['Simples_Nacional'].isna()
+                        df_final.loc[mask_not_found, 'OBS'] = "Não encontrado"
+                        df_final['Simples_Nacional'] = df_final['Simples_Nacional'].fillna('Não')
+
+                        df_final.rename(columns={'Simples_Nacional': 'Simples Nacional'}, inplace=True)
                         df_final['CNPJ'] = df_final['CNPJ'].apply(formatar_cnpj)
 
                         df_final.drop(columns=['cnpj_basico'], inplace=True)
