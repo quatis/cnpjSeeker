@@ -94,12 +94,12 @@ def formatar_cnpj(c):
 # --- ABAS ---
 
 def aba_bigquery():
-    st.title("BigQuery (Nuvem)")
-    st.caption("Alta performance via Google Cloud")
+    st.title("Consulta BigQuery")
+    st.caption("Google Cloud")
     st.divider()
     col1, col2 = st.columns([1, 2])
     with col1:
-        input_texto = st.text_area("Insira os CNPJs (BigQuery):", height=300)
+        input_texto = st.text_area("Insira os CNPJs:", height=300)
         placeholder_btn = st.empty()
         btn = st.button("Executar BigQuery")
     with col2:
@@ -130,15 +130,15 @@ def aba_bigquery():
                     with placeholder_btn: st.download_button("Gerar Excel (xlsx)", output.getvalue(), f"bq_{datetime.now().strftime('%H%M%S')}.xlsx")
 
 def aba_brasilapi_lote():
-    st.title("BrasilAPI (Lote)")
+    st.title("Consulta BrasilAPI")
     st.caption("Fallback detalhado com monitoramento vivo")
     st.divider()
     col1, col2 = st.columns([1, 2])
     with col1:
-        input_texto = st.text_area("Insira os CNPJs (BrasilAPI):", height=300)
+        input_texto = st.text_area("Insira os CNPJs:", height=300)
         delay_ref = 0.8
         placeholder_btn = st.empty()
-        btn = st.button("Iniciar BrasilAPI")
+        btn = st.button("Iniciar via API")
     with col2:
         if btn:
             cnpjs = list(set(re.findall(r"\d{14}", input_texto.replace(".", "").replace("/", "").replace("-", ""))))
