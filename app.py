@@ -131,7 +131,7 @@ def aba_bigquery():
 
 def aba_brasilapi_lote():
     st.title("Consulta BrasilAPI")
-    st.caption("Fallback detalhado com monitoramento vivo")
+    st.caption("Consulta detalhada linha a linha.")
     st.divider()
     col1, col2 = st.columns([1, 2])
     with col1:
